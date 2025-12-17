@@ -27,7 +27,7 @@ def wait_for_db():
             print("✅ MySQL conectado com sucesso!")
             return True
         except Exception as e:
-            if i < 5 or i % 10 == 0:  # Mostra erro a cada 10 tentativas
+            if i < 5 or i % 10 == 0:
                 print(f"⏳ Tentativa {i+1}/{max_retries} - Aguardando MySQL...")
                 print(f"   Erro: {str(e)[:100]}")
             time.sleep(retry_interval)

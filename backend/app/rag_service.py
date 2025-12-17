@@ -73,6 +73,7 @@ class RAGService:
                     "produto": row.produto,
                     "quantidade": row.quantidade,
                     "preco": row.preco,
+                    "categoria": row.categoria,
                     "id": row.id
                 })
             
@@ -97,6 +98,7 @@ class RAGService:
                     "produto": row.produto,
                     "cliente": row.cliente,
                     "valor": row.valor_total,
+                    "quantidade": row.quantidade,
                     "id": row.id
                 })
             
@@ -172,12 +174,12 @@ class RAGService:
             print(f"❌ Erro ao adicionar documentos: {e}")
             return False
     
-    def query(self, question: str, k: int = 4):
+    def query(self, question: str, k: int = 5):
         """Busca documentos relevantes e gera resposta"""
         try:
             print(f"🔍 Processando query: {question}")
             
-            # Busca documentos similares
+            # Busca documentos similares (aumentei para k=5 para ter mais contexto)
             docs = self.vectorstore.similarity_search(question, k=k)
             
             if not docs:
@@ -213,71 +215,228 @@ class RAGService:
         
         question_lower = question.lower()
         
-        # Identifica o tipo de pergunta
+        # Separa documentos por tipo
+        estoque_docs = [d for d in docs if d.metadata.get("source") == "estoque"]
+        vendas_docs = [d for d in docs if d.metadata.get("source") == "vendas"]
+        conhecimento_docs = [d for d in docs if d.metadata.get("source") not in ["estoque", "vendas"]]
+        
+        # Identifica o tipo de pergunta com mais palavras-chave
         is_quantity_question = any(word in question_lower for word in 
-            ["quanto", "quantos", "quantidade", "tem"])
+            ["quanto", "quantos", "quantidade", "tem", "há", "existe", "tenho", "temos"])
         
         is_price_question = any(word in question_lower for word in 
-            ["preço", "valor", "custa", "custo"])
+            ["preço", "valor", "custa", "custo", "quanto custa", "vale"])
         
         is_sales_question = any(word in question_lower for word in 
-            ["vendas", "vendeu", "cliente", "comprou"])
+            ["vendas", "vendeu", "cliente", "comprou", "comprador", "compra", "vendido"])
         
-        # Resposta para perguntas de QUANTIDADE
-        if is_quantity_question and docs[0].metadata.get("source") == "estoque":
-            produto = docs[0].metadata.get("produto")
-            quantidade = docs[0].metadata.get("quantidade")
+        is_list_question = any(word in question_lower for word in 
+            ["lista", "listar", "todos", "todas", "quais", "mostre", "exiba"])
+        
+        is_stock_question = any(word in question_lower for word in 
+            ["estoque", "produto", "produtos", "disponível", "disponibilidade"])
+        
+        # Busca nome de produto específico na pergunta
+        produtos_conhecidos = ["alface", "tomate", "cenoura", "batata", "cebola", "arroz", "feijão"]
+        produto_mencionado = None
+        for produto in produtos_conhecidos:
+            if produto in question_lower:
+                produto_mencionado = produto
+                break
+        
+        # === PERGUNTAS SOBRE QUANTIDADE DE PRODUTOS ESPECÍFICOS ===
+        if is_quantity_question and estoque_docs:
+            # Se mencionou um produto específico, prioriza ele
+            if produto_mencionado:
+                for doc in estoque_docs:
+                    if doc.metadata.get("produto", "").lower() == produto_mencionado:
+                        produto = doc.metadata.get("produto")
+                        quantidade = doc.metadata.get("quantidade")
+                        preco = doc.metadata.get("preco")
+                        return (
+                            f"📦 **Estoque de {produto}**\n\n"
+                            f"Quantidade disponível: **{quantidade} unidades**\n"
+                            f"Preço unitário: **R$ {preco:.2f}**\n\n"
+                            f"✅ Informação em tempo real do banco de dados."
+                        )
             
-            return (
-                f"Atualmente temos **{quantidade} unidades** de {produto} no estoque.\n\n"
-                f"📦 Informação recuperada do banco de dados em tempo real."
-            )
+            # Se não mencionou produto ou não encontrou, lista os encontrados
+            if len(estoque_docs) == 1:
+                produto = estoque_docs[0].metadata.get("produto")
+                quantidade = estoque_docs[0].metadata.get("quantidade")
+                preco = estoque_docs[0].metadata.get("preco")
+                return (
+                    f"📦 **Estoque de {produto}**\n\n"
+                    f"Quantidade disponível: **{quantidade} unidades**\n"
+                    f"Preço unitário: **R$ {preco:.2f}**\n\n"
+                    f"✅ Informação em tempo real do banco de dados."
+                )
+            else:
+                # Múltiplos produtos
+                produtos_info = []
+                for doc in estoque_docs[:5]:
+                    produto = doc.metadata.get("produto")
+                    quantidade = doc.metadata.get("quantidade")
+                    preco = doc.metadata.get("preco")
+                    produtos_info.append(
+                        f"• **{produto}**: {quantidade} unidades (R$ {preco:.2f}/un)"
+                    )
+                
+                return (
+                    f"📦 **Quantidades em estoque:**\n\n" +
+                    "\n".join(produtos_info) +
+                    f"\n\n✅ Dados atualizados do sistema."
+                )
         
-        # Resposta para perguntas de PREÇO
-        elif is_price_question and docs[0].metadata.get("source") == "estoque":
-            produto = docs[0].metadata.get("produto")
-            preco = docs[0].metadata.get("preco")
+        # === PERGUNTAS SOBRE PREÇO ===
+        elif is_price_question and estoque_docs:
+            # Se mencionou um produto específico, prioriza ele
+            if produto_mencionado:
+                for doc in estoque_docs:
+                    if doc.metadata.get("produto", "").lower() == produto_mencionado:
+                        produto = doc.metadata.get("produto")
+                        preco = doc.metadata.get("preco")
+                        quantidade = doc.metadata.get("quantidade")
+                        return (
+                            f"💰 **Preço de {produto}**\n\n"
+                            f"Valor: **R$ {preco:.2f}** por unidade\n"
+                            f"Estoque disponível: {quantidade} unidades\n\n"
+                            f"✅ Informação do banco de dados."
+                        )
             
-            return (
-                f"O preço de {produto} é **R$ {preco:.2f}** por unidade.\n\n"
-                f"💰 Informação recuperada do banco de dados."
-            )
+            if len(estoque_docs) == 1:
+                produto = estoque_docs[0].metadata.get("produto")
+                preco = estoque_docs[0].metadata.get("preco")
+                quantidade = estoque_docs[0].metadata.get("quantidade")
+                
+                return (
+                    f"💰 **Preço de {produto}**\n\n"
+                    f"Valor: **R$ {preco:.2f}** por unidade\n"
+                    f"Estoque disponível: {quantidade} unidades\n\n"
+                    f"✅ Informação do banco de dados."
+                )
+            else:
+                # Múltiplos produtos
+                produtos_info = []
+                for doc in estoque_docs[:5]:
+                    produto = doc.metadata.get("produto")
+                    preco = doc.metadata.get("preco")
+                    produtos_info.append(f"• **{produto}**: R$ {preco:.2f}")
+                
+                return (
+                    f"💰 **Tabela de preços:**\n\n" +
+                    "\n".join(produtos_info) +
+                    f"\n\n✅ Informação atualizada."
+                )
         
-        # Resposta para perguntas de VENDAS
-        elif is_sales_question and docs[0].metadata.get("source") == "vendas":
+        # === PERGUNTAS SOBRE VENDAS ===
+        elif is_sales_question and vendas_docs:
             vendas_info = []
-            for doc in docs[:3]:
-                if doc.metadata.get("source") == "vendas":
-                    vendas_info.append(doc.page_content)
+            total_vendas = 0
+            produtos_vendidos = {}
+            
+            for doc in vendas_docs[:5]:
+                produto = doc.metadata.get("produto")
+                cliente = doc.metadata.get("cliente")
+                valor = doc.metadata.get("valor", 0)
+                quantidade = doc.metadata.get("quantidade", 0)
+                
+                total_vendas += float(valor) if valor else 0
+                
+                if produto in produtos_vendidos:
+                    produtos_vendidos[produto] += quantidade
+                else:
+                    produtos_vendidos[produto] = quantidade
+                
+                vendas_info.append(
+                    f"• {quantidade}x **{produto}** → Cliente: {cliente} (R$ {valor:.2f})"
+                )
+            
+            resumo = "\n".join(f"• **{prod}**: {qtd} unidades vendidas" 
+                              for prod, qtd in produtos_vendidos.items())
             
             return (
-                f"Aqui estão as informações sobre vendas:\n\n" +
-                "\n\n".join(f"• {info}" for info in vendas_info) +
-                f"\n\n📊 Dados recuperados do histórico de vendas."
+                f"📊 **Histórico de Vendas**\n\n"
+                f"**Vendas recentes:**\n" +
+                "\n".join(vendas_info) +
+                f"\n\n**Resumo por produto:**\n{resumo}\n\n"
+                f"💵 **Total em vendas:** R$ {total_vendas:.2f}\n"
+                f"✅ Dados do histórico de vendas."
             )
         
-        # Resposta GENÉRICA para múltiplas informações
-        elif len(docs) > 1:
-            answer_parts = [
-                f"Com base na sua pergunta, encontrei as seguintes informações:\n"
-            ]
+        # === LISTAR TODOS OS PRODUTOS ===
+        elif (is_list_question or is_stock_question) and estoque_docs:
+            produtos_completos = []
+            valor_total_estoque = 0
             
-            for i, doc in enumerate(docs[:3], 1):
-                source_type = doc.metadata.get("source", "conhecimento")
-                answer_parts.append(f"\n**{i}.** {doc.page_content}")
+            for doc in estoque_docs:
+                produto = doc.metadata.get("produto")
+                quantidade = doc.metadata.get("quantidade")
+                preco = doc.metadata.get("preco")
+                categoria = doc.metadata.get("categoria", "Geral")
+                
+                valor_total_estoque += quantidade * preco
+                
+                produtos_completos.append(
+                    f"• **{produto}** ({categoria})\n"
+                    f"  Qtd: {quantidade} un | Preço: R$ {preco:.2f}/un | Total: R$ {quantidade * preco:.2f}"
+                )
             
-            answer_parts.append(
-                f"\n\n💡 Informações recuperadas da base de conhecimento do sistema."
+            return (
+                f"📋 **Produtos em Estoque**\n\n" +
+                "\n\n".join(produtos_completos) +
+                f"\n\n📊 **Resumo:**\n"
+                f"• Total de produtos: {len(produtos_completos)}\n"
+                f"• Valor total do estoque: R$ {valor_total_estoque:.2f}\n\n"
+                f"✅ Inventário completo do sistema."
             )
-            
-            return "".join(answer_parts)
         
-        # Resposta para DOCUMENTO ÚNICO
+        # === RESPOSTA BASEADA EM CONHECIMENTO GERAL ===
+        elif conhecimento_docs:
+            if len(conhecimento_docs) == 1:
+                return (
+                    f"{conhecimento_docs[0].page_content}\n\n"
+                    f"💡 Informação da base de conhecimento."
+                )
+            else:
+                answer_parts = ["📚 **Informações encontradas:**\n"]
+                
+                for i, doc in enumerate(conhecimento_docs[:3], 1):
+                    answer_parts.append(f"\n**{i}.** {doc.page_content}")
+                
+                answer_parts.append("\n\n💡 Base de conhecimento do sistema.")
+                return "".join(answer_parts)
+        
+        # === RESPOSTA GENÉRICA COM TODOS OS DADOS ===
         else:
-            return (
-                f"{docs[0].page_content}\n\n"
-                f"💡 Informação recuperada da base de conhecimento."
-            )
+            response_parts = []
+            
+            if estoque_docs:
+                response_parts.append("📦 **Informações de Estoque:**")
+                for doc in estoque_docs[:3]:
+                    produto = doc.metadata.get("produto")
+                    quantidade = doc.metadata.get("quantidade")
+                    preco = doc.metadata.get("preco")
+                    response_parts.append(
+                        f"\n• **{produto}**: {quantidade} un | R$ {preco:.2f}/un"
+                    )
+            
+            if vendas_docs:
+                response_parts.append("\n\n📊 **Informações de Vendas:**")
+                for doc in vendas_docs[:3]:
+                    produto = doc.metadata.get("produto")
+                    cliente = doc.metadata.get("cliente")
+                    valor = doc.metadata.get("valor")
+                    response_parts.append(
+                        f"\n• **{produto}** vendido para {cliente} (R$ {valor:.2f})"
+                    )
+            
+            if conhecimento_docs:
+                response_parts.append("\n\n💡 **Base de Conhecimento:**")
+                for doc in conhecimento_docs[:2]:
+                    response_parts.append(f"\n• {doc.page_content}")
+            
+            return "".join(response_parts) + "\n\n✅ Dados recuperados do sistema."
 
 # Instância global do serviço
 rag_service = RAGService()
