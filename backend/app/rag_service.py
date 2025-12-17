@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 class RAGService:
     def __init__(self):
         try:
-            print("🔄 Inicializando RAG Service...")
+            print("Inicializando RAG Service...")
             
             self.embeddings = HuggingFaceEmbeddings(
                 model_name="sentence-transformers/all-MiniLM-L6-v2"
@@ -31,7 +31,6 @@ class RAGService:
             self.engine = create_engine(DATABASE_URL)
             self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
             
-            self._initialize_sample_data()
             self._sync_database_to_rag()
             
             print("✅ RAG Service inicializado com sucesso!")
@@ -42,7 +41,6 @@ class RAGService:
     
     def _sync_database_to_rag(self):
         try:
-            print("🔄 Sincronizando banco de dados para RAG...")
             db = self.SessionLocal()
             
             try:
@@ -55,7 +53,6 @@ class RAGService:
                 
                 if ids_to_delete:
                     self.collection.delete(ids=ids_to_delete)
-                    print(f"🗑️  Removidos {len(ids_to_delete)} documentos antigos do banco")
             except Exception as e:
                 print(f"⚠️  Aviso ao limpar: {e}")
             
@@ -158,16 +155,7 @@ class RAGService:
             import traceback
             traceback.print_exc()
     
-    def _initialize_sample_data(self):
-        try:
-            if self.collection.count() > 50:
-                print("📚 Base de conhecimento já populada.")
-                return
-                
-           
-            
-        except Exception as e:
-            print(f"⚠️ Aviso ao inicializar conhecimento: {e}")
+    
     
     def sync_database(self):
         self._sync_database_to_rag()

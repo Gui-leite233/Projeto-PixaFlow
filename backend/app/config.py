@@ -7,8 +7,5 @@ class Settings(BaseSettings):
     MYSQL_PASSWORD: str = "password"
     MYSQL_DATABASE: str = "ragdb"
     CHROMA_PATH: str = "./chroma_db"
-    
-    class Config:
-        env_file = ".env"
 
-settings = Settings()
+settings = Settings() 

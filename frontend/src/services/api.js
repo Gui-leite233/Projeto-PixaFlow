@@ -16,20 +16,7 @@ export const sendQuery = async (question) => {
   return response.json();
 };
 
-export const syncDatabase = async () => {
-  const response = await fetch(`${API_URL}/sync-database`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
 
-  if (!response.ok) {
-    throw new Error("Erro ao sincronizar banco");
-  }
-
-  return response.json();
-};
 
 export const addDocument = async (texts) => {
   const response = await fetch(`${API_URL}/add-documents`, {
@@ -50,22 +37,6 @@ export const addDocument = async (texts) => {
   return response.json();
 };
 
-export const getQueries = async () => {
-  const response = await fetch(`${API_URL}/queries`);
 
-  if (!response.ok) {
-    throw new Error("Erro ao buscar consultas");
-  }
 
-  return response.json();
-};
 
-export const getDocumentCount = async () => {
-  const response = await fetch(`${API_URL}/documents/count`);
-
-  if (!response.ok) {
-    throw new Error("Erro ao buscar contagem");
-  }
-
-  return response.json();
-};
