@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: pixaflow-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ragdb
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "user", "-ppassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - pixaflow-network
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  backend:
+    build: 
+      context: ./backend
+    container_name: pixaflow-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: ragdb
+    volumes:
+      - ./backend:/app
+      - chroma_data:/app/chroma_db
+    networks:
+      - pixaflow-network
+    restart: unless-stopped
+
+  frontend:
+    build: 
+      context: ./frontend
+    container_name: pixaflow-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    stdin_open: true
+    tty: true
+    networks:
+      - pixaflow-network
+
+volumes:
+  mysql_data:
+  chroma_data:
+
+networks:
+  pixaflow-network:
+    driver: bridge

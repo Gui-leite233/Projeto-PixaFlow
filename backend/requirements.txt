@@ -1,0 +1,23 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+sqlalchemy==2.0.23
+pymysql==1.1.0
+cryptography==41.0.7
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+httpx==0.25.2
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+# RAG e ML
+chromadb==0.4.22
+langchain==0.1.0
+langchain-community==0.0.10
+sentence-transformers==2.3.1
+
+# Dependências adicionais
+numpy==1.24.3
+torch==2.1.0
+tokenizers==0.15.0
+huggingface-hub==0.19.4
