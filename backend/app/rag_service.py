@@ -10,15 +10,12 @@ class RAGService:
         try:
             print("🔄 Inicializando RAG Service...")
             
-            # Embeddings locais
             self.embeddings = HuggingFaceEmbeddings(
                 model_name="sentence-transformers/all-MiniLM-L6-v2"
             )
             
-            # ChromaDB
             self.chroma_client = chromadb.PersistentClient(path=settings.CHROMA_PATH)
             
-            # Criar ou obter collection
             try:
                 self.collection = self.chroma_client.get_collection("documents")
             except:
@@ -30,12 +27,10 @@ class RAGService:
                 embedding_function=self.embeddings
             )
             
-            # Database connection para sincronização
             DATABASE_URL = f"mysql+pymysql://{settings.MYSQL_USER}:{settings.MYSQL_PASSWORD}@{settings.MYSQL_HOST}:{settings.MYSQL_PORT}/{settings.MYSQL_DATABASE}"
             self.engine = create_engine(DATABASE_URL)
             self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
             
-            # Inicializar dados
             self._initialize_sample_data()
             self._sync_database_to_rag()
             
@@ -46,14 +41,11 @@ class RAGService:
             raise
     
     def _sync_database_to_rag(self):
-        """Sincroniza dados do MySQL para o ChromaDB"""
         try:
             print("🔄 Sincronizando banco de dados para RAG...")
             db = self.SessionLocal()
             
-            # Limpa dados antigos do banco (mantém conhecimento geral)
             try:
-                # Pega todos os IDs com source=estoque ou vendas
                 all_items = self.collection.get()
                 ids_to_delete = []
                 
@@ -67,7 +59,6 @@ class RAGService:
             except Exception as e:
                 print(f"⚠️  Aviso ao limpar: {e}")
             
-            # Buscar dados de ESTOQUE
             estoque_query = text("SELECT * FROM estoque")
             estoque_result = db.execute(estoque_query)
             estoque_rows = estoque_result.fetchall()
@@ -80,10 +71,8 @@ class RAGService:
             ids_to_add = []
             
             for row in estoque_rows:
-                # Múltiplas variações do mesmo dado para melhorar busca semântica
                 base_id = f"estoque_{row.id}"
                 
-                # Texto principal
                 doc_text = (
                     f"Produto: {row.produto}. "
                     f"Temos {row.quantidade} {row.unidade} em estoque. "
@@ -101,7 +90,6 @@ class RAGService:
                 })
                 ids_to_add.append(f"{base_id}_1")
                 
-                # Variação 2 - foco em quantidade
                 doc_text2 = f"Quantidade de {row.produto} disponível: {row.quantidade} {row.unidade}"
                 texts_to_add.append(doc_text2)
                 metadatas_to_add.append({
@@ -114,7 +102,6 @@ class RAGService:
                 })
                 ids_to_add.append(f"{base_id}_2")
                 
-                # Variação 3 - foco em preço
                 doc_text3 = f"Preço do {row.produto}: R$ {row.preco:.2f}"
                 texts_to_add.append(doc_text3)
                 metadatas_to_add.append({
@@ -127,7 +114,6 @@ class RAGService:
                 })
                 ids_to_add.append(f"{base_id}_3")
             
-            # Buscar dados de VENDAS
             vendas_query = text("SELECT * FROM vendas ORDER BY data_venda DESC LIMIT 20")
             vendas_result = db.execute(vendas_query)
             vendas_rows = vendas_result.fetchall()
@@ -155,7 +141,6 @@ class RAGService:
             
             db.close()
             
-            # Adiciona tudo de uma vez ao ChromaDB
             if texts_to_add:
                 self.collection.add(
                     documents=texts_to_add,
@@ -174,9 +159,7 @@ class RAGService:
             traceback.print_exc()
     
     def _initialize_sample_data(self):
-        """Adiciona conhecimento geral ao sistema"""
         try:
-            # Verifica se já tem muitos documentos (evita duplicação)
             if self.collection.count() > 50:
                 print("📚 Base de conhecimento já populada.")
                 return
@@ -187,12 +170,10 @@ class RAGService:
             print(f"⚠️ Aviso ao inicializar conhecimento: {e}")
     
     def sync_database(self):
-        """Método público para re-sincronizar o banco"""
         self._sync_database_to_rag()
         return {"message": "Banco de dados sincronizado com sucesso!"}
     
     def add_documents(self, texts: list[str], metadatas: list[dict] = None):
-        """Adiciona documentos customizados ao RAG"""
         try:
             self.vectorstore.add_texts(texts=texts, metadatas=metadatas)
             print(f"✅ {len(texts)} documento(s) adicionado(s)")
@@ -202,11 +183,9 @@ class RAGService:
             return False
     
     def query(self, question: str, k: int = 5):
-        """Busca documentos relevantes e gera resposta"""
         try:
             print(f"🔍 Processando query: {question}")
             
-            # Busca documentos similares (aumentei para k=5 para ter mais contexto)
             docs = self.vectorstore.similarity_search(question, k=k)
             
             if not docs:
@@ -215,7 +194,6 @@ class RAGService:
                     "sources": []
                 }
             
-            # Gera resposta baseada nos documentos
             answer = self._generate_answer(question, docs)
             sources = [doc.page_content for doc in docs]
             
@@ -235,14 +213,12 @@ class RAGService:
             }
     
     def _generate_answer(self, question: str, docs: list):
-        """Gera resposta natural baseada nos documentos encontrados"""
         
         if not docs:
             return "Não encontrei informações relevantes."
         
         question_lower = question.lower()
         
-        # Separa documentos por tipo - PRIORIDADE ABSOLUTA PARA DADOS DO BANCO
         estoque_docs = [d for d in docs if d.metadata.get("source") == "estoque"]
         vendas_docs = [d for d in docs if d.metadata.get("source") == "vendas"]
         
@@ -251,8 +227,6 @@ class RAGService:
         print(f"   Estoque encontrado: {len(estoque_docs)}")
         print(f"   Vendas encontradas: {len(vendas_docs)}")
         
-        # *** MUDANÇA CRÍTICA: Se houver QUALQUER dado do banco, USE APENAS ELE ***
-        # Ignora completamente conhecimento geral se houver dados reais
         if not estoque_docs and not vendas_docs:
             # Só usa conhecimento geral se NÃO houver nada do banco
             conhecimento_docs = [d for d in docs if d.metadata.get("source") not in ["estoque", "vendas"]]
@@ -263,20 +237,16 @@ class RAGService:
                 )
             return "Não encontrei informações específicas sobre sua pergunta."
         
-        # *** A PARTIR DAQUI, SÓ TRABALHA COM DADOS DO BANCO ***
         print("✅ Respondendo com dados REAIS do banco de dados MySQL")
         
-        # Palavras-chave para identificar tipo de pergunta
         is_quantity = any(w in question_lower for w in ["quanto", "quantos", "quantidade"])
         is_price = any(w in question_lower for w in ["preço", "valor", "custa"])
         is_sales = any(w in question_lower for w in ["venda", "vendeu", "cliente"])
         is_list = any(w in question_lower for w in ["lista", "todos", "quais"])
         
-        # Busca produto específico mencionado
         produtos_conhecidos = ["alface", "tomate", "cenoura", "batata", "cebola", "arroz", "feijão"]
         produto_mencionado = next((p for p in produtos_conhecidos if p in question_lower), None)
         
-        # === PERGUNTAS SOBRE VENDAS ===
         if is_sales and vendas_docs:
             vendas_info = []
             total = 0
@@ -296,9 +266,7 @@ class RAGService:
                 f"✅ Dados reais do banco MySQL"
             )
         
-        # === PERGUNTAS SOBRE ESTOQUE ===
         if estoque_docs:
-            # Produto específico mencionado
             if produto_mencionado:
                 for doc in estoque_docs:
                     if produto_mencionado in doc.metadata.get("produto", "").lower():
@@ -314,7 +282,6 @@ class RAGService:
                         else:
                             return f"📦 **{prod}** ({cat})\n• Quantidade: {qtd} un\n• Preço: R$ {preco:.2f}/un\n✅ Dados do estoque"
             
-            # Lista múltiplos produtos
             if is_list or len(estoque_docs) > 1:
                 produtos = []
                 total_valor = 0
@@ -334,7 +301,6 @@ class RAGService:
                     f"✅ Inventário MySQL em tempo real"
                 )
             
-            # Um único produto
             doc = estoque_docs[0]
             prod = doc.metadata.get("produto")
             qtd = doc.metadata.get("quantidade")
@@ -350,5 +316,4 @@ class RAGService:
             )
         
         return "Encontrei informações mas não consegui processá-las adequadamente."
-# Instância global do serviço
 rag_service = RAGService()

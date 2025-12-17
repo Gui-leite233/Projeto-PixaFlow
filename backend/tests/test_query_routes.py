@@ -10,13 +10,11 @@ from app.main import app
 client = TestClient(app)
 
 def test_health_check():
-    """Testa endpoint de health check"""
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "healthy"}
 
 def test_root():
-    """Testa endpoint raiz"""
     response = client.get("/")
     assert response.status_code == 200
     data = response.json()
@@ -24,7 +22,6 @@ def test_root():
     assert "status" in data
 
 def test_create_query():
-    """Testa criação de query com RAG"""
     response = client.post(
         "/api/v1/query",
         json={"question": "Quantos produtos tem no estoque?"}
@@ -37,13 +34,11 @@ def test_create_query():
     assert isinstance(data["sources"], list)
 
 def test_get_queries():
-    """Testa listagem de queries"""
     response = client.get("/api/v1/queries")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
 def test_add_documents():
-    """Testa adição de documentos"""
     response = client.post(
         "/api/v1/add-documents",
         json={
@@ -58,7 +53,6 @@ def test_add_documents():
     assert data["count"] == 2
 
 def test_document_count():
-    """Testa contagem de documentos"""
     response = client.get("/api/v1/documents/count")
     assert response.status_code == 200
     data = response.json()

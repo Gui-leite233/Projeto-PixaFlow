@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes import query_routes
 from app.database import engine, Base
 
-# Criar tabelas
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -20,7 +19,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Incluir rotas
 app.include_router(query_routes.router, prefix="/api/v1", tags=["RAG Queries"])
 
 @app.get("/")

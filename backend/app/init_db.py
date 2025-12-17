@@ -1,41 +1,14 @@
 from app.database import engine, Base
-from app.models import Document, Query
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text
-from datetime import datetime
-
-# Modelo de Estoque
-class Estoque(Base):
-    __tablename__ = "estoque"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    produto = Column(String(100), nullable=False)
-    quantidade = Column(Integer, nullable=False)
-    unidade = Column(String(20), default="unidade")
-    preco = Column(Float)
-    categoria = Column(String(50))
-    ultima_atualizacao = Column(DateTime, default=datetime.utcnow)
-
-# Modelo de Vendas
-class Vendas(Base):
-    __tablename__ = "vendas"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    produto = Column(String(100), nullable=False)
-    quantidade = Column(Integer, nullable=False)
-    valor_total = Column(Float)
-    data_venda = Column(DateTime, default=datetime.utcnow)
-    cliente = Column(String(100))
+from app.models import Document, Query, Estoque, Vendas
+from sqlalchemy.orm import Session
 
 def init_database():
     print("🔄 Criando tabelas...")
     Base.metadata.create_all(bind=engine)
     print("✅ Tabelas criadas!")
     
-    # Adicionar dados de exemplo
-    from sqlalchemy.orm import Session
     db = Session(bind=engine)
     
-    # Verifica se já tem dados
     estoque_count = db.query(Estoque).count()
     if estoque_count == 0:
         print("📝 Adicionando dados de exemplo...")

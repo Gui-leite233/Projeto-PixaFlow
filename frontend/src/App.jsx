@@ -44,7 +44,6 @@ function App() {
             <div className="logo">🤖</div>
             <div>
               <h1>Pixaflow AI Assistant</h1>
-              <p>Sistema RAG com ChromaDB</p>
             </div>
           </div>
         </header>

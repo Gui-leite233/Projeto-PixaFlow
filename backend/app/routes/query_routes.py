@@ -17,12 +17,9 @@ class DocumentRequest(BaseModel):
 
 @router.post("/query")
 async def create_query(request: QueryRequest, db: Session = Depends(get_db)):
-    """Consulta usando RAG com dados do banco"""
     try:
-        # Processa a pergunta com RAG
         result = rag_service.query(request.question)
         
-        # Salva no histórico
         query = Query(
             query_text=request.question,
             response=result["answer"]
@@ -40,19 +37,15 @@ async def create_query(request: QueryRequest, db: Session = Depends(get_db)):
 
 @router.get("/queries")
 async def get_queries(db: Session = Depends(get_db)):
-    """Lista histórico de consultas"""
     queries = db.query(Query).order_by(Query.created_at.desc()).limit(10).all()
     return queries
 
 @router.post("/add-documents")
 async def add_documents(request: DocumentRequest):
-    """Adiciona documentos customizados ao RAG"""
     try:
-        # Se metadatas não foi fornecido, criar uma lista vazia
         if request.metadatas is None:
             request.metadatas = [{"source": "custom"} for _ in request.texts]
         
-        # Validar que metadatas tem o mesmo tamanho que texts
         if len(request.metadatas) != len(request.texts):
             raise HTTPException(
                 status_code=400, 
@@ -78,7 +71,6 @@ async def add_documents(request: DocumentRequest):
 
 @router.post("/sync-database")
 async def sync_database():
-    """Sincroniza dados do MySQL para o ChromaDB"""
     try:
         result = rag_service.sync_database()
         return result
@@ -87,7 +79,6 @@ async def sync_database():
 
 @router.get("/documents/count")
 async def get_document_count():
-    """Retorna quantidade de documentos no sistema"""
     try:
         count = rag_service.collection.count()
         return {"count": count}

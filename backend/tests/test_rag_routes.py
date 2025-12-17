@@ -10,7 +10,6 @@ from app.main import app
 client = TestClient(app)
 
 def test_query_endpoint():
-    """Testa endpoint principal de query"""
     response = client.post(
         "/api/v1/query",
         json={"question": "Quanto custa o tomate?"}
@@ -21,14 +20,12 @@ def test_query_endpoint():
     assert "sources" in data
 
 def test_sync_database():
-    """Testa sincronização do banco de dados"""
     response = client.post("/api/v1/sync-database")
     assert response.status_code == 200
     data = response.json()
     assert "message" in data
 
 def test_add_documents_valid():
-    """Testa adição de documentos com dados válidos"""
     response = client.post(
         "/api/v1/add-documents",
         json={
@@ -42,7 +39,6 @@ def test_add_documents_valid():
     assert "count" in data
 
 def test_document_count():
-    """Testa contagem de documentos no sistema"""
     response = client.get("/api/v1/documents/count")
     assert response.status_code == 200
     data = response.json()
