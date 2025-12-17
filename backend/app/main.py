@@ -6,7 +6,11 @@ from app.database import engine, Base
 # Criar tabelas
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="SQL AI Query API")
+app = FastAPI(
+    title="RAG Query API",
+    description="Sistema de consulta inteligente usando RAG com ChromaDB",
+    version="1.0.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,21 +20,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(query_routes.router, prefix="/api/v1")
+# Incluir rotas
+app.include_router(query_routes.router, prefix="/api/v1", tags=["RAG Queries"])
 
 @app.get("/")
 async def root():
-    return {"message": "SQL AI rodando!", "status": "ok"}
+    return {
+        "message": "Sistema RAG - Consulta Inteligente",
+        "status": "ok",
+        "endpoints": {
+            "query": "/api/v1/query",
+            "add_docs": "/api/v1/add-documents",
+            "history": "/api/v1/queries"
+        }
+    }
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
 
-# Inicializar dados ao startar
 @app.on_event("startup")
 async def startup_event():
-    from app.init_db import init_database
     try:
-        init_database()
+        from app.rag_service import rag_service
+        print("✅ RAG Service inicializado!")
+        print(f"📚 Documentos no sistema: {rag_service.collection.count()}")
     except Exception as e:
-        print(f"⚠️ Aviso ao inicializar dados: {e}")
+        print(f"⚠️ Aviso ao inicializar RAG: {e}")
