@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from typing import Optional, List
 from app.database import get_db
 from app.models import Query
 from app.rag_service import rag_service
@@ -11,8 +12,8 @@ class QueryRequest(BaseModel):
     question: str
 
 class DocumentRequest(BaseModel):
-    texts: list[str]
-    metadatas: list[dict] = None
+    texts: List[str]
+    metadatas: Optional[List[dict]] = None
 
 @router.post("/query")
 async def create_query(request: QueryRequest, db: Session = Depends(get_db)):
@@ -47,6 +48,17 @@ async def get_queries(db: Session = Depends(get_db)):
 async def add_documents(request: DocumentRequest):
     """Adiciona documentos customizados ao RAG"""
     try:
+        # Se metadatas não foi fornecido, criar uma lista vazia
+        if request.metadatas is None:
+            request.metadatas = [{"source": "custom"} for _ in request.texts]
+        
+        # Validar que metadatas tem o mesmo tamanho que texts
+        if len(request.metadatas) != len(request.texts):
+            raise HTTPException(
+                status_code=400, 
+                detail="metadatas deve ter o mesmo tamanho que texts"
+            )
+        
         success = rag_service.add_documents(
             texts=request.texts,
             metadatas=request.metadatas
@@ -59,6 +71,8 @@ async def add_documents(request: DocumentRequest):
             }
         else:
             raise HTTPException(status_code=500, detail="Erro ao adicionar documentos")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -31,7 +31,9 @@ async def root():
         "endpoints": {
             "query": "/api/v1/query",
             "add_docs": "/api/v1/add-documents",
-            "history": "/api/v1/queries"
+            "history": "/api/v1/queries",
+            "sync": "/api/v1/sync-database",
+            "count": "/api/v1/documents/count"
         }
     }
 
@@ -52,12 +54,4 @@ async def startup_event():
         init_database()
         print("✅ Banco de dados inicializado!")
     except Exception as e:
-        print(f"⚠️  Aviso ao inicializar DB: {e}")
-
-    app = FastAPI(
-        title="RAG Query API",
-        description="Sistema de consulta inteligente usando RAG com ChromaDB",
-        version="1.0.0"
-    )
-
-
+        print(f"⚠️ Aviso ao inicializar DB: {e}")

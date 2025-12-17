@@ -27,13 +27,14 @@ def test_create_query():
     """Testa criação de query com RAG"""
     response = client.post(
         "/api/v1/query",
-        json={"question": "O que é Python?"}
+        json={"question": "Quantos produtos tem no estoque?"}
     )
     assert response.status_code == 200
     data = response.json()
     assert "answer" in data
     assert "sources" in data
-    assert data["answer"] is not None
+    assert isinstance(data["answer"], str)
+    assert isinstance(data["sources"], list)
 
 def test_get_queries():
     """Testa listagem de queries"""
@@ -46,14 +47,15 @@ def test_add_documents():
     response = client.post(
         "/api/v1/add-documents",
         json={
-            "texts": ["Teste de documento para RAG"],
-            "metadatas": None
+            "texts": ["Python é uma linguagem de programação", "FastAPI é um framework web"],
+            "metadatas": [{"source": "test"}, {"source": "test"}]
         }
     )
     assert response.status_code == 200
     data = response.json()
     assert "message" in data
-    assert data["count"] == 1
+    assert "count" in data
+    assert data["count"] == 2
 
 def test_document_count():
     """Testa contagem de documentos"""
@@ -62,3 +64,4 @@ def test_document_count():
     data = response.json()
     assert "count" in data
     assert isinstance(data["count"], int)
+    assert data["count"] > 0
