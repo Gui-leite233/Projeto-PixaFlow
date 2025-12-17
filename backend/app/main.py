@@ -47,3 +47,17 @@ async def startup_event():
         print(f"📚 Documentos no sistema: {rag_service.collection.count()}")
     except Exception as e:
         print(f"⚠️ Aviso ao inicializar RAG: {e}")
+    try:
+        from app.init_db import init_database
+        init_database()
+        print("✅ Banco de dados inicializado!")
+    except Exception as e:
+        print(f"⚠️  Aviso ao inicializar DB: {e}")
+
+    app = FastAPI(
+        title="RAG Query API",
+        description="Sistema de consulta inteligente usando RAG com ChromaDB",
+        version="1.0.0"
+    )
+
+

@@ -51,76 +51,127 @@ class RAGService:
             print("🔄 Sincronizando banco de dados para RAG...")
             db = self.SessionLocal()
             
+            # Limpa dados antigos do banco (mantém conhecimento geral)
+            try:
+                # Pega todos os IDs com source=estoque ou vendas
+                all_items = self.collection.get()
+                ids_to_delete = []
+                
+                for i, metadata in enumerate(all_items['metadatas']):
+                    if metadata and metadata.get('source') in ['estoque', 'vendas']:
+                        ids_to_delete.append(all_items['ids'][i])
+                
+                if ids_to_delete:
+                    self.collection.delete(ids=ids_to_delete)
+                    print(f"🗑️  Removidos {len(ids_to_delete)} documentos antigos do banco")
+            except Exception as e:
+                print(f"⚠️  Aviso ao limpar: {e}")
+            
             # Buscar dados de ESTOQUE
             estoque_query = text("SELECT * FROM estoque")
             estoque_result = db.execute(estoque_query)
             estoque_rows = estoque_result.fetchall()
             
-            estoque_texts = []
-            estoque_metadatas = []
+            if not estoque_rows:
+                print("⚠️  AVISO: Tabela estoque está VAZIA!")
+            
+            texts_to_add = []
+            metadatas_to_add = []
+            ids_to_add = []
             
             for row in estoque_rows:
-                # Cria texto descritivo para cada produto
-                text = (
-                    f"No estoque temos {row.quantidade} {row.unidade} de {row.produto}. "
-                    f"O preço unitário é R$ {row.preco:.2f}. "
-                    f"Este produto pertence à categoria {row.categoria}. "
-                    f"Última atualização: {row.ultima_atualizacao}."
+                # Múltiplas variações do mesmo dado para melhorar busca semântica
+                base_id = f"estoque_{row.id}"
+                
+                # Texto principal
+                doc_text = (
+                    f"Produto: {row.produto}. "
+                    f"Temos {row.quantidade} {row.unidade} em estoque. "
+                    f"Preço: R$ {row.preco:.2f} por {row.unidade}. "
+                    f"Categoria: {row.categoria}."
                 )
-                estoque_texts.append(text)
-                estoque_metadatas.append({
+                texts_to_add.append(doc_text)
+                metadatas_to_add.append({
                     "source": "estoque",
                     "produto": row.produto,
                     "quantidade": row.quantidade,
-                    "preco": row.preco,
+                    "preco": float(row.preco),
                     "categoria": row.categoria,
                     "id": row.id
                 })
+                ids_to_add.append(f"{base_id}_1")
+                
+                # Variação 2 - foco em quantidade
+                doc_text2 = f"Quantidade de {row.produto} disponível: {row.quantidade} {row.unidade}"
+                texts_to_add.append(doc_text2)
+                metadatas_to_add.append({
+                    "source": "estoque",
+                    "produto": row.produto,
+                    "quantidade": row.quantidade,
+                    "preco": float(row.preco),
+                    "categoria": row.categoria,
+                    "id": row.id
+                })
+                ids_to_add.append(f"{base_id}_2")
+                
+                # Variação 3 - foco em preço
+                doc_text3 = f"Preço do {row.produto}: R$ {row.preco:.2f}"
+                texts_to_add.append(doc_text3)
+                metadatas_to_add.append({
+                    "source": "estoque",
+                    "produto": row.produto,
+                    "quantidade": row.quantidade,
+                    "preco": float(row.preco),
+                    "categoria": row.categoria,
+                    "id": row.id
+                })
+                ids_to_add.append(f"{base_id}_3")
             
             # Buscar dados de VENDAS
             vendas_query = text("SELECT * FROM vendas ORDER BY data_venda DESC LIMIT 20")
             vendas_result = db.execute(vendas_query)
             vendas_rows = vendas_result.fetchall()
             
-            vendas_texts = []
-            vendas_metadatas = []
+            if not vendas_rows:
+                print("⚠️  AVISO: Tabela vendas está VAZIA!")
             
             for row in vendas_rows:
-                text = (
-                    f"Foi realizada uma venda de {row.quantidade} unidades de {row.produto} "
-                    f"para o cliente {row.cliente}. "
-                    f"O valor total da venda foi R$ {row.valor_total:.2f}. "
-                    f"Data da venda: {row.data_venda}."
+                venda_text = (
+                    f"Venda: {row.quantidade} unidades de {row.produto} "
+                    f"para {row.cliente}. "
+                    f"Valor: R$ {row.valor_total:.2f}. "
+                    f"Data: {row.data_venda}."
                 )
-                vendas_texts.append(text)
-                vendas_metadatas.append({
+                texts_to_add.append(venda_text)
+                metadatas_to_add.append({
                     "source": "vendas",
                     "produto": row.produto,
                     "cliente": row.cliente,
-                    "valor": row.valor_total,
+                    "valor": float(row.valor_total),
                     "quantidade": row.quantidade,
                     "id": row.id
                 })
+                ids_to_add.append(f"vendas_{row.id}")
             
             db.close()
             
-            # Adiciona ao ChromaDB
-            if estoque_texts:
-                self.vectorstore.add_texts(
-                    texts=estoque_texts,
-                    metadatas=estoque_metadatas
+            # Adiciona tudo de uma vez ao ChromaDB
+            if texts_to_add:
+                self.collection.add(
+                    documents=texts_to_add,
+                    metadatas=metadatas_to_add,
+                    ids=ids_to_add
                 )
-                print(f"✅ {len(estoque_texts)} produtos do estoque sincronizados!")
-            
-            if vendas_texts:
-                self.vectorstore.add_texts(
-                    texts=vendas_texts,
-                    metadatas=vendas_metadatas
-                )
-                print(f"✅ {len(vendas_texts)} vendas sincronizadas!")
+                print(f"✅ {len(estoque_rows)} produtos (com {len([m for m in metadatas_to_add if m['source']=='estoque'])} variações)")
+                print(f"✅ {len(vendas_rows)} vendas sincronizadas")
+                print(f"📊 Total no ChromaDB: {self.collection.count()} documentos")
+            else:
+                print("❌ ERRO: Nenhum dado foi sincronizado!")
                 
         except Exception as e:
-            print(f"⚠️ Aviso ao sincronizar banco: {e}")
+            print(f"❌ ERRO ao sincronizar banco: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _initialize_sample_data(self):
         """Adiciona conhecimento geral ao sistema"""
@@ -130,31 +181,7 @@ class RAGService:
                 print("📚 Base de conhecimento já populada.")
                 return
                 
-            print("📝 Adicionando conhecimento geral...")
-            sample_texts = [
-                "Python é uma linguagem de programação de alto nível, interpretada e de propósito geral. É conhecida por sua sintaxe clara e legível.",
-                
-                "FastAPI é um framework web moderno para construir APIs com Python. Usa type hints e validação automática de dados.",
-                
-                "React é uma biblioteca JavaScript para interfaces de usuário. Permite criar componentes reutilizáveis e tem uma grande comunidade.",
-                
-                "Docker é uma plataforma para containers que facilita o deployment e a portabilidade de aplicações entre ambientes.",
-                
-                "Machine Learning é um campo da IA focado em sistemas que aprendem com dados e melhoram ao longo do tempo.",
-                
-                "ChromaDB é um banco vetorial open-source otimizado para embeddings e busca semântica.",
-                
-                "RAG (Retrieval-Augmented Generation) combina busca de informações com geração de texto por IA.",
-                
-                "SQL é a linguagem padrão para gerenciar bancos de dados relacionais, permitindo operações CRUD.",
-                
-                "Git é um sistema de controle de versão distribuído usado para rastrear mudanças em código.",
-                
-                "API REST usa métodos HTTP (GET, POST, PUT, DELETE) para operações em recursos web.",
-            ]
-            
-            self.vectorstore.add_texts(texts=sample_texts)
-            print(f"✅ {len(sample_texts)} documentos de conhecimento adicionados!")
+           
             
         except Exception as e:
             print(f"⚠️ Aviso ao inicializar conhecimento: {e}")
@@ -215,228 +242,113 @@ class RAGService:
         
         question_lower = question.lower()
         
-        # Separa documentos por tipo
+        # Separa documentos por tipo - PRIORIDADE ABSOLUTA PARA DADOS DO BANCO
         estoque_docs = [d for d in docs if d.metadata.get("source") == "estoque"]
         vendas_docs = [d for d in docs if d.metadata.get("source") == "vendas"]
-        conhecimento_docs = [d for d in docs if d.metadata.get("source") not in ["estoque", "vendas"]]
         
-        # Identifica o tipo de pergunta com mais palavras-chave
-        is_quantity_question = any(word in question_lower for word in 
-            ["quanto", "quantos", "quantidade", "tem", "há", "existe", "tenho", "temos"])
+        # Debug
+        print(f"🔍 Análise:")
+        print(f"   Estoque encontrado: {len(estoque_docs)}")
+        print(f"   Vendas encontradas: {len(vendas_docs)}")
         
-        is_price_question = any(word in question_lower for word in 
-            ["preço", "valor", "custa", "custo", "quanto custa", "vale"])
-        
-        is_sales_question = any(word in question_lower for word in 
-            ["vendas", "vendeu", "cliente", "comprou", "comprador", "compra", "vendido"])
-        
-        is_list_question = any(word in question_lower for word in 
-            ["lista", "listar", "todos", "todas", "quais", "mostre", "exiba"])
-        
-        is_stock_question = any(word in question_lower for word in 
-            ["estoque", "produto", "produtos", "disponível", "disponibilidade"])
-        
-        # Busca nome de produto específico na pergunta
-        produtos_conhecidos = ["alface", "tomate", "cenoura", "batata", "cebola", "arroz", "feijão"]
-        produto_mencionado = None
-        for produto in produtos_conhecidos:
-            if produto in question_lower:
-                produto_mencionado = produto
-                break
-        
-        # === PERGUNTAS SOBRE QUANTIDADE DE PRODUTOS ESPECÍFICOS ===
-        if is_quantity_question and estoque_docs:
-            # Se mencionou um produto específico, prioriza ele
-            if produto_mencionado:
-                for doc in estoque_docs:
-                    if doc.metadata.get("produto", "").lower() == produto_mencionado:
-                        produto = doc.metadata.get("produto")
-                        quantidade = doc.metadata.get("quantidade")
-                        preco = doc.metadata.get("preco")
-                        return (
-                            f"📦 **Estoque de {produto}**\n\n"
-                            f"Quantidade disponível: **{quantidade} unidades**\n"
-                            f"Preço unitário: **R$ {preco:.2f}**\n\n"
-                            f"✅ Informação em tempo real do banco de dados."
-                        )
-            
-            # Se não mencionou produto ou não encontrou, lista os encontrados
-            if len(estoque_docs) == 1:
-                produto = estoque_docs[0].metadata.get("produto")
-                quantidade = estoque_docs[0].metadata.get("quantidade")
-                preco = estoque_docs[0].metadata.get("preco")
-                return (
-                    f"📦 **Estoque de {produto}**\n\n"
-                    f"Quantidade disponível: **{quantidade} unidades**\n"
-                    f"Preço unitário: **R$ {preco:.2f}**\n\n"
-                    f"✅ Informação em tempo real do banco de dados."
-                )
-            else:
-                # Múltiplos produtos
-                produtos_info = []
-                for doc in estoque_docs[:5]:
-                    produto = doc.metadata.get("produto")
-                    quantidade = doc.metadata.get("quantidade")
-                    preco = doc.metadata.get("preco")
-                    produtos_info.append(
-                        f"• **{produto}**: {quantidade} unidades (R$ {preco:.2f}/un)"
-                    )
-                
-                return (
-                    f"📦 **Quantidades em estoque:**\n\n" +
-                    "\n".join(produtos_info) +
-                    f"\n\n✅ Dados atualizados do sistema."
-                )
-        
-        # === PERGUNTAS SOBRE PREÇO ===
-        elif is_price_question and estoque_docs:
-            # Se mencionou um produto específico, prioriza ele
-            if produto_mencionado:
-                for doc in estoque_docs:
-                    if doc.metadata.get("produto", "").lower() == produto_mencionado:
-                        produto = doc.metadata.get("produto")
-                        preco = doc.metadata.get("preco")
-                        quantidade = doc.metadata.get("quantidade")
-                        return (
-                            f"💰 **Preço de {produto}**\n\n"
-                            f"Valor: **R$ {preco:.2f}** por unidade\n"
-                            f"Estoque disponível: {quantidade} unidades\n\n"
-                            f"✅ Informação do banco de dados."
-                        )
-            
-            if len(estoque_docs) == 1:
-                produto = estoque_docs[0].metadata.get("produto")
-                preco = estoque_docs[0].metadata.get("preco")
-                quantidade = estoque_docs[0].metadata.get("quantidade")
-                
-                return (
-                    f"💰 **Preço de {produto}**\n\n"
-                    f"Valor: **R$ {preco:.2f}** por unidade\n"
-                    f"Estoque disponível: {quantidade} unidades\n\n"
-                    f"✅ Informação do banco de dados."
-                )
-            else:
-                # Múltiplos produtos
-                produtos_info = []
-                for doc in estoque_docs[:5]:
-                    produto = doc.metadata.get("produto")
-                    preco = doc.metadata.get("preco")
-                    produtos_info.append(f"• **{produto}**: R$ {preco:.2f}")
-                
-                return (
-                    f"💰 **Tabela de preços:**\n\n" +
-                    "\n".join(produtos_info) +
-                    f"\n\n✅ Informação atualizada."
-                )
-        
-        # === PERGUNTAS SOBRE VENDAS ===
-        elif is_sales_question and vendas_docs:
-            vendas_info = []
-            total_vendas = 0
-            produtos_vendidos = {}
-            
-            for doc in vendas_docs[:5]:
-                produto = doc.metadata.get("produto")
-                cliente = doc.metadata.get("cliente")
-                valor = doc.metadata.get("valor", 0)
-                quantidade = doc.metadata.get("quantidade", 0)
-                
-                total_vendas += float(valor) if valor else 0
-                
-                if produto in produtos_vendidos:
-                    produtos_vendidos[produto] += quantidade
-                else:
-                    produtos_vendidos[produto] = quantidade
-                
-                vendas_info.append(
-                    f"• {quantidade}x **{produto}** → Cliente: {cliente} (R$ {valor:.2f})"
-                )
-            
-            resumo = "\n".join(f"• **{prod}**: {qtd} unidades vendidas" 
-                              for prod, qtd in produtos_vendidos.items())
-            
-            return (
-                f"📊 **Histórico de Vendas**\n\n"
-                f"**Vendas recentes:**\n" +
-                "\n".join(vendas_info) +
-                f"\n\n**Resumo por produto:**\n{resumo}\n\n"
-                f"💵 **Total em vendas:** R$ {total_vendas:.2f}\n"
-                f"✅ Dados do histórico de vendas."
-            )
-        
-        # === LISTAR TODOS OS PRODUTOS ===
-        elif (is_list_question or is_stock_question) and estoque_docs:
-            produtos_completos = []
-            valor_total_estoque = 0
-            
-            for doc in estoque_docs:
-                produto = doc.metadata.get("produto")
-                quantidade = doc.metadata.get("quantidade")
-                preco = doc.metadata.get("preco")
-                categoria = doc.metadata.get("categoria", "Geral")
-                
-                valor_total_estoque += quantidade * preco
-                
-                produtos_completos.append(
-                    f"• **{produto}** ({categoria})\n"
-                    f"  Qtd: {quantidade} un | Preço: R$ {preco:.2f}/un | Total: R$ {quantidade * preco:.2f}"
-                )
-            
-            return (
-                f"📋 **Produtos em Estoque**\n\n" +
-                "\n\n".join(produtos_completos) +
-                f"\n\n📊 **Resumo:**\n"
-                f"• Total de produtos: {len(produtos_completos)}\n"
-                f"• Valor total do estoque: R$ {valor_total_estoque:.2f}\n\n"
-                f"✅ Inventário completo do sistema."
-            )
-        
-        # === RESPOSTA BASEADA EM CONHECIMENTO GERAL ===
-        elif conhecimento_docs:
-            if len(conhecimento_docs) == 1:
+        # *** MUDANÇA CRÍTICA: Se houver QUALQUER dado do banco, USE APENAS ELE ***
+        # Ignora completamente conhecimento geral se houver dados reais
+        if not estoque_docs and not vendas_docs:
+            # Só usa conhecimento geral se NÃO houver nada do banco
+            conhecimento_docs = [d for d in docs if d.metadata.get("source") not in ["estoque", "vendas"]]
+            if conhecimento_docs:
                 return (
                     f"{conhecimento_docs[0].page_content}\n\n"
-                    f"💡 Informação da base de conhecimento."
+                    f"💡 Informação da base de conhecimento geral."
                 )
-            else:
-                answer_parts = ["📚 **Informações encontradas:**\n"]
-                
-                for i, doc in enumerate(conhecimento_docs[:3], 1):
-                    answer_parts.append(f"\n**{i}.** {doc.page_content}")
-                
-                answer_parts.append("\n\n💡 Base de conhecimento do sistema.")
-                return "".join(answer_parts)
+            return "Não encontrei informações específicas sobre sua pergunta."
         
-        # === RESPOSTA GENÉRICA COM TODOS OS DADOS ===
-        else:
-            response_parts = []
+        # *** A PARTIR DAQUI, SÓ TRABALHA COM DADOS DO BANCO ***
+        print("✅ Respondendo com dados REAIS do banco de dados MySQL")
+        
+        # Palavras-chave para identificar tipo de pergunta
+        is_quantity = any(w in question_lower for w in ["quanto", "quantos", "quantidade"])
+        is_price = any(w in question_lower for w in ["preço", "valor", "custa"])
+        is_sales = any(w in question_lower for w in ["venda", "vendeu", "cliente"])
+        is_list = any(w in question_lower for w in ["lista", "todos", "quais"])
+        
+        # Busca produto específico mencionado
+        produtos_conhecidos = ["alface", "tomate", "cenoura", "batata", "cebola", "arroz", "feijão"]
+        produto_mencionado = next((p for p in produtos_conhecidos if p in question_lower), None)
+        
+        # === PERGUNTAS SOBRE VENDAS ===
+        if is_sales and vendas_docs:
+            vendas_info = []
+            total = 0
             
-            if estoque_docs:
-                response_parts.append("📦 **Informações de Estoque:**")
-                for doc in estoque_docs[:3]:
-                    produto = doc.metadata.get("produto")
-                    quantidade = doc.metadata.get("quantidade")
+            for doc in vendas_docs[:5]:
+                prod = doc.metadata.get("produto")
+                cli = doc.metadata.get("cliente")
+                val = doc.metadata.get("valor", 0)
+                qtd = doc.metadata.get("quantidade", 0)
+                total += float(val)
+                vendas_info.append(f"• {qtd}x {prod} → {cli} (R$ {val:.2f})")
+            
+            return (
+                f"📊 **Histórico de Vendas**\n\n" +
+                "\n".join(vendas_info) +
+                f"\n\n💵 Total: R$ {total:.2f}\n"
+                f"✅ Dados reais do banco MySQL"
+            )
+        
+        # === PERGUNTAS SOBRE ESTOQUE ===
+        if estoque_docs:
+            # Produto específico mencionado
+            if produto_mencionado:
+                for doc in estoque_docs:
+                    if produto_mencionado in doc.metadata.get("produto", "").lower():
+                        prod = doc.metadata.get("produto")
+                        qtd = doc.metadata.get("quantidade")
+                        preco = doc.metadata.get("preco")
+                        cat = doc.metadata.get("categoria")
+                        
+                        if is_price:
+                            return f"💰 **{prod}**: R$ {preco:.2f}/un\nEstoque: {qtd} unidades\n✅ Preço do banco de dados"
+                        elif is_quantity:
+                            return f"📦 **{prod}**: {qtd} unidades disponíveis\nPreço: R$ {preco:.2f}/un\n✅ Quantidade atualizada do MySQL"
+                        else:
+                            return f"📦 **{prod}** ({cat})\n• Quantidade: {qtd} un\n• Preço: R$ {preco:.2f}/un\n✅ Dados do estoque"
+            
+            # Lista múltiplos produtos
+            if is_list or len(estoque_docs) > 1:
+                produtos = []
+                total_valor = 0
+                
+                for doc in estoque_docs[:7]:
+                    prod = doc.metadata.get("produto")
+                    qtd = doc.metadata.get("quantidade")
                     preco = doc.metadata.get("preco")
-                    response_parts.append(
-                        f"\n• **{produto}**: {quantidade} un | R$ {preco:.2f}/un"
-                    )
+                    cat = doc.metadata.get("categoria", "")
+                    total_valor += qtd * preco
+                    produtos.append(f"• **{prod}** ({cat}): {qtd} un × R$ {preco:.2f} = R$ {qtd*preco:.2f}")
+                
+                return (
+                    f"📋 **Estoque Completo**\n\n" +
+                    "\n".join(produtos) +
+                    f"\n\n💰 Valor total: R$ {total_valor:.2f}\n"
+                    f"✅ Inventário MySQL em tempo real"
+                )
             
-            if vendas_docs:
-                response_parts.append("\n\n📊 **Informações de Vendas:**")
-                for doc in vendas_docs[:3]:
-                    produto = doc.metadata.get("produto")
-                    cliente = doc.metadata.get("cliente")
-                    valor = doc.metadata.get("valor")
-                    response_parts.append(
-                        f"\n• **{produto}** vendido para {cliente} (R$ {valor:.2f})"
-                    )
+            # Um único produto
+            doc = estoque_docs[0]
+            prod = doc.metadata.get("produto")
+            qtd = doc.metadata.get("quantidade")
+            preco = doc.metadata.get("preco")
+            cat = doc.metadata.get("categoria", "")
             
-            if conhecimento_docs:
-                response_parts.append("\n\n💡 **Base de Conhecimento:**")
-                for doc in conhecimento_docs[:2]:
-                    response_parts.append(f"\n• {doc.page_content}")
-            
-            return "".join(response_parts) + "\n\n✅ Dados recuperados do sistema."
-
+            return (
+                f"📦 **{prod}** ({cat})\n"
+                f"• Quantidade: {qtd} unidades\n"
+                f"• Preço: R$ {preco:.2f}/un\n"
+                f"• Total: R$ {qtd * preco:.2f}\n\n"
+                f"✅ Dados atualizados do MySQL"
+            )
+        
+        return "Encontrei informações mas não consegui processá-las adequadamente."
 # Instância global do serviço
 rag_service = RAGService()
